@@ -1,4 +1,5 @@
-flask
-faster-whisper
-requests
-python-dotenv
+flask==3.1.3
+faster-whisper==1.2.1
+requests==2.34.2
+python-dotenv==1.2.2
+gunicorn==26.2.0

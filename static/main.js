@@ -249,6 +249,10 @@ function connectSSE(taskId) {
       }
     } catch {}
   };
+  // 排队 / 开始生成等状态提示
+  evtSource.addEventListener("status", e => {
+    try { rtStatus.textContent = JSON.parse(e.data).message; } catch {}
+  });
   evtSource.addEventListener("done", e => {
     processingDone = true;
     evtSource.close();

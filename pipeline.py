@@ -6,6 +6,7 @@
 """
 import os
 import subprocess
+import sys
 
 from subtitle import write_ass, write_srt
 from translator import translate_segments
@@ -65,7 +66,7 @@ def burn_ffmpeg():
 
 BURN_UNAVAILABLE_MSG = (
     "烧录功能不可用：当前 ffmpeg 缺少 libass（ass 字幕滤镜）。"
-    "请运行 `brew install ffmpeg-full` 安装带 libass 的版本后重试；"
+    "macOS 请运行 `brew install ffmpeg-full`，Linux 请安装带 libass 的 ffmpeg（如 `apt install ffmpeg`）后重试；"
     "在此之前，你仍可使用「边看边译」模式实时看字幕，或下载 .srt 字幕文件自行加载。"
 )
 
@@ -121,6 +122,16 @@ def burn_in(video_path, ass_path, out_path):
     if not ff:
         raise PipelineError(BURN_UNAVAILABLE_MSG)
     vf = f"ass={_filter_escape(os.path.abspath(ass_path))}"
+    cmd_sw = [
+        ff, "-y", "-i", video_path,
+        "-vf", vf,
+        "-c:v", "libx264", "-crf", "20", "-preset", "fast",
+        "-c:a", "copy", out_path,
+    ]
+    if sys.platform != "darwin":
+        # videotoolbox 硬件编码只有 macOS 有，其他系统直接软件编码
+        _run(cmd_sw)
+        return
     cmd = [
         ff, "-y", "-i", video_path,
         "-vf", vf,
@@ -131,12 +142,6 @@ def burn_in(video_path, ass_path, out_path):
         _run(cmd)
     except PipelineError:
         # 个别源（如奇数分辨率/特殊像素格式）硬件编码会失败，回退软件编码
-        cmd_sw = [
-            ff, "-y", "-i", video_path,
-            "-vf", vf,
-            "-c:v", "libx264", "-crf", "20", "-preset", "fast",
-            "-c:a", "copy", out_path,
-        ]
         _run(cmd_sw)
 
 

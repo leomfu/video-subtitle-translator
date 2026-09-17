@@ -13,7 +13,7 @@
 
 1. **安装依赖**（虚拟环境 `venv/` 已装好大部分）：
    ```bash
-   ./venv/bin/pip install -r requirements.txt
+   ./venv/bin/python -m pip install -r requirements.txt
    ```
 
 2. **烧录功能需要带 libass 的 ffmpeg**。系统自带的精简版 ffmpeg 没有字幕滤镜，请安装：
@@ -31,7 +31,6 @@
 ## 启动
 
 ```bash
-cd /Users/fuweiliang/claude-F/English-加字幕
 ./venv/bin/python app.py
 ```
 
@@ -39,6 +38,48 @@ cd /Users/fuweiliang/claude-F/English-加字幕
 
 - **边看边译**：填 key → 拖入视频 → 点「开始播放并翻译」→ 视频立即播放，字幕陆续叠上；用下方按钮切换显示语言；完成后可下载 `.srt`。
 - **烧录模式**：填 key → 拖入视频 → 选字幕模式 → 点「开始烧录」→ 完成后下载带字幕视频和 `.srt`。
+
+## 给朋友用（部署到服务器）
+
+在 `.env` 里设置 `ACCESS_PASSWORD` 后，程序进入共享模式：
+
+- 打开网页要输入密码（用户名随便填）。
+- 不再使用服务器 `.env` 里的 DeepSeek key，每个朋友在网页上填自己的 key。
+- 同一时刻只处理一个视频，其余排队，页面上会显示“排队中，前面还有 N 个任务”；排队的任务超过 `MAX_QUEUE`（默认 5）时拒绝新上传。
+- 任务完成 24 小时后自动删除它的视频和字幕（`FILE_TTL_HOURS`）。只删本次运行产生的文件；服务重启前的旧文件需要手动清理。
+
+所有可配置项见 `.env.example`。
+
+### 部署步骤（以 Ubuntu 为例，建议至少 2 核 4GB 内存）
+
+```bash
+sudo apt install -y python3-venv ffmpeg nginx   # apt 的 ffmpeg 自带 libass，可烧录
+git clone https://github.com/leomfu/video-subtitle-translator.git
+cd video-subtitle-translator
+python3 -m venv venv
+./venv/bin/python -m pip install -r requirements.txt
+cp .env.example .env    # 编辑 .env，设置 ACCESS_PASSWORD
+
+# 必须 -w 1：任务状态存在进程内存里，多进程会找不到任务
+./venv/bin/gunicorn -w 1 --threads 16 --timeout 0 -b 127.0.0.1:5001 app:app
+```
+
+用 nginx 对外提供访问，并务必配置 HTTPS（例如用 certbot），否则密码会明文传输。nginx 里需要这几项：
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:5001;
+    client_max_body_size 4g;      # 允许上传大视频
+    proxy_buffering off;          # 边看边译的字幕推送（SSE）不能被缓冲
+    proxy_read_timeout 3600s;
+}
+```
+
+注意：
+
+- 服务器上没有 GPU 时用 CPU 识别，长视频会比较慢。
+- 首次处理视频会自动下载约 460MB 的识别模型，服务器需要能访问外网。
+- 重启服务会丢失进行中的任务。
 
 ## 说明
 

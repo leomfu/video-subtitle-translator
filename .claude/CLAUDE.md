@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 lsof -ti :5001 | xargs kill
 ```
 
-烧录功能依赖带 libass 的 ffmpeg：`brew install ffmpeg-full`（keg-only，二进制在 `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`，`pipeline.burn_ffmpeg()` 会自动探测并缓存）。系统精简版 ffmpeg 仅用于抽音频。DeepSeek key 由网页传入或回退 `.env` 的 `DEEPSEEK_API_KEY`。
+烧录功能依赖带 libass 的 ffmpeg：`brew install ffmpeg-full`（keg-only，二进制在 `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`，`pipeline.burn_ffmpeg()` 会自动探测并缓存）。系统精简版 ffmpeg 仅用于抽音频。DeepSeek key 由网页传入；本地模式下可回退 `.env` 的 `DEEPSEEK_API_KEY`。
 
 ## 架构
 
@@ -28,6 +28,8 @@ lsof -ti :5001 | xargs kill
 
 1. **烧录模式**：`POST /upload` → `_burn_worker` 线程 → `pipeline.process_video()`（抽音频 → 整体识别 → 整体翻译 → 写 ASS/SRT → ffmpeg 烧录）→ 前端每秒轮询 `/progress/<id>` → `/download/<id>/{video,srt}`。
 2. **边看边译**：`POST /upload_realtime` 保存后立即返回可播地址（`/video/<id>` 支持 Range 拖动）→ `_realtime_worker` 用 `pipeline.transcribe_stream()` 流式识别，每攒 `REALTIME_BATCH=5` 段翻译一批 → 追加到 task 的 `segments` → `/stream/<id>` 以 SSE 逐条推给前端。SSE 事件带 `id:`，断线重连时靠 `Last-Event-ID` 续传避免字幕重复（前端还有按 index 去重兜底）。
+
+**共享模式**（`.env` 设了 `ACCESS_PASSWORD`，用于部署给朋友）：`before_request` 做全站 HTTP Basic 认证；`translator.server_key()` 返回空，不回退站长 key；清理线程按 `FILE_TTL_HOURS` 删除过期任务及其文件——只删文件名以 `<task_id>_` 开头、且属于本进程任务的文件，绝不能改成按目录/mtime 扫删（会误删本地以前的视频）。两种模式都经 `job_slot` 信号量串行执行任务（Whisper 单例不能并发推理），排队中的任务 `waiting=True`，`/progress` 与 SSE `event: status` 会推送排队提示。部署只能单进程（`gunicorn -w 1 --threads N`）。
 
 `tasks` 字典的读写都要经过 `tasks_lock`；改动 task 结构时两个 worker、SSE 生成器和 `/progress` 都要对齐。
 

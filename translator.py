@@ -32,8 +32,15 @@ class TranslationError(Exception):
     pass
 
 
+def server_key():
+    """.env 里的站长 key。设置了 ACCESS_PASSWORD 即视为共享部署，不回退，防止访客花站长的额度。"""
+    if os.environ.get("ACCESS_PASSWORD", "").strip():
+        return ""
+    return os.environ.get("DEEPSEEK_API_KEY", "").strip()
+
+
 def _resolve_key(api_key):
-    key = (api_key or "").strip() or os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    key = (api_key or "").strip() or server_key()
     if not key:
         raise TranslationError(
             "没有提供 DeepSeek API key。请在页面上填写 key。"
