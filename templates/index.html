@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>字幕放映室 · 视频自动加字幕</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-has-key="{{ 'yes' if has_key else 'no' }}" data-burn-ok="{{ 'yes' if burn_ok else 'no' }}">
+
+<!-- 胶片边缘齿孔 / 暗角 / 颗粒（纯装饰） -->
+<div class="film-edge film-edge-l" aria-hidden="true"></div>
+<div class="film-edge film-edge-r" aria-hidden="true"></div>
+<div class="vignette" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<main class="stage">
+
+  <header class="marquee reveal" style="--d:0s">
+    <p class="eyebrow">REEL Nº 01 · LOCAL WHISPER × DEEPSEEK</p>
+    <h1>字幕<em>放映室</em></h1>
+    <p class="sub">语音在本机识别，译文实时叠上银幕——边看边译，或将字幕永久烧进画面。</p>
+  </header>
+
+  <!-- 模式切换 -->
+  <div class="tabs reveal" style="--d:.08s" role="tablist">
+    <button class="tab active" data-tab="realtime">
+      <span class="tab-no">Ⅰ</span>
+      <span class="tab-name">边看边译</span>
+      <span class="tab-en">LIVE SCREENING</span>
+    </button>
+    <button class="tab" data-tab="burn">
+      <span class="tab-no">Ⅱ</span>
+      <span class="tab-name">烧录模式</span>
+      <span class="tab-en">BURN-IN PRINT</span>
+    </button>
+  </div>
+
+  {% if not burn_ok %}
+  <div class="warn" id="burn-warn" hidden>
+    当前 ffmpeg 缺少 libass，无法烧录字幕。请运行 <code>brew install ffmpeg-full</code> 后重启服务。
+    在此之前可使用「边看边译」模式，或下载 .srt 字幕文件。
+  </div>
+  {% endif %}
+
+  <!-- 翻译 key 输入（两种模式通用） -->
+  <div class="engine-box reveal" style="--d:.16s">
+    <label class="block-label" for="api-key">DeepSeek API Key</label>
+    <div id="key-row" class="key-row">
+      <input type="password" id="api-key" placeholder="sk-··················" autocomplete="off">
+      <p class="hint">key 只保存在本浏览器（localStorage），随请求发送，不落盘到服务器。
+        没有可到 <a href="https://platform.deepseek.com" target="_blank" rel="noopener">platform.deepseek.com</a> 申请。</p>
+    </div>
+    <p id="engine-status" class="engine-status"></p>
+  </div>
+
+  <!-- 上传区（通用）：银幕 -->
+  <div id="drop" class="drop reveal" style="--d:.24s">
+    <input type="file" id="file" accept="video/*,.mkv,.ts,.flv" hidden>
+    <p id="drop-text">点击或拖拽视频到这里<br><span class="hint">mp4 / mov / mkv / avi / webm …</span></p>
+  </div>
+
+  <!-- 烧录模式：字幕模式选择 -->
+  <div class="modes" id="burn-modes" hidden>
+    <label class="mode"><input type="radio" name="mode" value="both" checked>
+      <span><b>双语字幕</b><small>English 上 · 中文下</small></span></label>
+    <label class="mode"><input type="radio" name="mode" value="zh">
+      <span><b>仅中文</b><small>只显示中文</small></span></label>
+    <label class="mode"><input type="radio" name="mode" value="en">
+      <span><b>仅 English</b><small>只显示英文</small></span></label>
+  </div>
+
+  <button id="start" class="reveal" style="--d:.32s" disabled>开始</button>
+
+  <!-- 烧录进度 -->
+  <section id="progress" hidden>
+    <div class="bar"><div id="bar-fill"></div></div>
+    <p id="status"></p>
+  </section>
+
+  <!-- 烧录结果 -->
+  <section id="result" hidden>
+    <h2>✦ 洗印完成</h2>
+    <div class="downloads">
+      <a id="dl-video" class="btn" download>下载带字幕的视频</a>
+      <a id="dl-srt" class="btn secondary" download>下载 .srt 字幕文件</a>
+    </div>
+    <button id="again" class="link">再处理一个视频</button>
+  </section>
+
+  <!-- 边看边译：播放器 + 字幕叠加层 -->
+  <section id="player-box" hidden>
+    <div class="video-wrap" id="video-wrap">
+      <video id="player" controls playsinline controlslist="nofullscreen"></video>
+      <div id="sub-overlay" class="sub-overlay">
+        <div id="sub-en" class="sub-line sub-en"></div>
+        <div id="sub-zh" class="sub-line sub-zh"></div>
+      </div>
+      <div id="sub-loading" class="sub-loading" hidden>字幕生成中…</div>
+      <button id="fs-btn" class="fs-btn" title="全屏">⛶</button>
+    </div>
+    <div class="play-controls">
+      <div class="disp-modes">
+        <label class="dmode"><input type="radio" name="dmode" value="both" checked><span>双语</span></label>
+        <label class="dmode"><input type="radio" name="dmode" value="zh"><span>中文</span></label>
+        <label class="dmode"><input type="radio" name="dmode" value="en"><span>English</span></label>
+      </div>
+      <a id="rt-srt" class="btn secondary" download hidden>下载 .srt</a>
+    </div>
+    <p id="rt-status" class="rt-status"></p>
+    <button id="rt-again" class="link">换一个视频</button>
+  </section>
+
+  <p id="error" class="error" hidden></p>
+
+  <footer class="colophon reveal" style="--d:.4s">
+    <span class="fin">fin</span>
+    <p>识别在本地进行 · 视频不上传 · 仅文字送 DEEPSEEK 翻译</p>
+  </footer>
+
+</main>
+<script src="/static/main.js"></script>
+</body>
+</html>
